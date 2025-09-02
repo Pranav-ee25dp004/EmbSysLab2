@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "tm4c123gh6pm.h"
 
+
 #define RED_LED   (1<<1)  // PF1
 #define BLUE_LED  (1<<2)  // PF2
 #define GREEN_LED (1<<3)  // PF3
@@ -18,25 +19,33 @@
 #define ST_CURRENT_R (*((volatile uint32_t *)0xE000E018))
 
 #define CLK_FREQ 16000000
-#define DELAY 0.5  // 2 seconds
+#define DELAY 0.5
 #define DELAY_CNT 4
 #define RELOAD_VALUE (uint32_t)((DELAY*CLK_FREQ)-1)
 #define ENABLE 1
 
-void SysTick_Wait(void) {
-    int x;
 
-    // Start SysTick
-    ST_CTRL_R |= 1;      // enable counting
-    x = 0;
-    while(x == 0) {      // wait for COUNTFLAG
-        x = ST_CTRL_R & (1<<16);
+volatile int tick_count =0;
+
+// SysTick Interrupt Service Routine
+void SysTickIntHandler(void) {
+
+    tick_count++;
+    if(tick_count == 4){
+        // Toggle RED LED
+        GPIO_PORTF_DATA_R ^= RED_LED;
+        tick_count = 0;
     }
+}
 
-    // Reload SysTick
-    ST_CTRL_R &= ~ENABLE;
-    ST_CURRENT_R = 0;
-    ST_CTRL_R |= ENABLE;
+void Systick_Init(){
+
+    // SysTick setup
+    ST_RELOAD_R = RELOAD_VALUE;
+    ST_CURRENT_R = 0x00;
+    ST_CTRL_R = (1<<2) | (1<<1) | 1;  // // ENABLE + TICKINT
+    //__asm(" CPSIE i");   // enable global interrupts
+
 }
 
 
@@ -60,24 +69,16 @@ int main(void) {
     // Pull-up resistors
     GPIO_PORTF_PUR_R |= SW1 | SW2;
 
-    // SysTick setup
-    ST_RELOAD_R = RELOAD_VALUE;
-    ST_CTRL_R |= (1<<2);  // use system clock
+    // Initialize SysTick
+    Systick_Init();
+    __asm(" CPSIE i");   // enable interrupts globally
+
+
 
     while(1) {
         // Read switches (active-low)
         uint8_t switches = ~GPIO_PORTF_DATA_R & (SW1 | SW2);
 
-
-        // Call delay 4 times
-        int i;
-        for (i = 0; i < DELAY_CNT; i++) {
-            SysTick_Wait();
-        }
-
-        // Toggle RED and set GREEN and/or BLUE based on switch status
-        // Toggle RED LED
-        GPIO_PORTF_DATA_R ^= RED_LED;
 
         // BLUE controlled by SW1
         if (switches & SW1)
